@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Asset & Cost Report</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    <script src='https://unpkg.com/@mapbox/leaflet-omnivore@0.3.4/leaflet-omnivore.min.js'></script>
+    <script src="https://unpkg.com/leaflet-geometryutil"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="main-container" id="main-content-wrapper">
+        <header class="main-header glass-card">
+            <h1 class="main-title" contenteditable="true">Project Dashboard</h1>
+            <div class="menu-button" tabindex="0">
+                <span>⋮</span>
+                <div class="dropdown-menu"></div>
+            </div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="openTab(event, 'main-report')" data-lang-key="tab_inspection_report">Inspection Report</button>
+            <button class="tab-button" onclick="openTab(event, 'cost-estimation-tab')" data-lang-key="tab_cost_estimation">Cost Estimation</button>
+            <button class="tab-button" onclick="openTab(event, 'vehicle-tracking-tab')" data-lang-key="tab_vehicle_tracking">Vehicle Tracking</button>
+            <button class="tab-button" onclick="openTab(event, 'saved-projects')" data-lang-key="tab_saved_projects">Saved Projects</button>
+        </div>
+        
+        <div id="main-report" class="tab-content active">
+            <div class="form-grid">
+                <div class="card glass-card">
+                    <h3 data-lang-key="add_new_asset">Add New Asset</h3>
+                    <div class="form-group">
+                        <input type="text" id="asset" list="asset-options" placeholder="Asset Description">
+                        <datalist id="asset-options"></datalist>
+                        <div id="drop-zone">
+                            <p data-lang-key="drop_or_click_photos">Drag & Drop or Click to Add Photos</p>
+                            <div class="drop-zone-buttons">
+                                <button class="icon-button" onclick="event.stopPropagation(); document.querySelector('.photo-input').click()" title="Choose from Gallery">🖼️</button>
+                                <button class="icon-button" onclick="event.stopPropagation(); openCamera()" title="Open Camera">📷</button>
+                            </div>
+                        </div>
+                        <input type="file" class="photo-input" accept="image/*" multiple style="display: none;">
+                        <div id="photo-previews" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 5px;"></div>
+                    </div>
+                </div>
+                <div class="card glass-card">
+                    <h3 data-lang-key="details_and_recommendations">Details & Recommendations</h3>
+                    <div class="form-group">
+                        <input type="text" id="status" placeholder="Status (e.g., Good, Damaged)">
+                        <input type="text" id="recommendation" placeholder="Recommendation (e.g., Repair, Replace)">
+                        <button class="form-button btn-action" onclick="showQuantityModal()" data-lang-key="calculate_quantity">Calculate Quantity</button>
+                    </div>
+                </div>
+                <div class="card glass-card">
+                    <h3 data-lang-key="gps_location">GPS Location</h3>
+                    <div id="map" style="display:none;"></div>
+                    <div class="location-mode-switcher">
+                        <button id="gps-auto-btn" class="location-mode-btn" onclick="switchLocationMode('auto')" data-lang-key="location_mode_auto">Automatic</button>
+                        <button id="gps-manual-btn" class="location-mode-btn" onclick="switchLocationMode('manual')" data-lang-key="location_mode_manual">Manual</button>
+                    </div>
+                    <div id="location-auto-panel" class="location-panel">
+                        <button class="btn-action" onclick="getLocation()" data-lang-key="get_current_gps">Get Current GPS</button>
+                    </div>
+                    <div id="location-manual-panel" class="location-panel" style="display: none;">
+                        <input type="number" id="manual-lat" placeholder="Manual Latitude" step="any" oninput="updateLocationFromManual()">
+                        <input type="number" id="manual-lng" placeholder="Manual Longitude" step="any" oninput="updateLocationFromManual()">
+                    </div>
+                    <div class="location-display-wrapper">
+                        <div>
+                            <div><small><strong><span data-lang-key="latitude">Latitude</span>:</strong> <span id="lat-display">N/A</span></small></div>
+                            <div><small><strong><span data-lang-key="longitude">Longitude</span>:</strong> <span id="lng-display">N/A</span></small></div>
+                        </div>
+                        <button id="insert-location-btn" class="btn-insert" onclick="insertLocationToForm()" data-lang-key="insert_location_to_form">Insert to Form</button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="addRow()" class="btn-insert"><span data-lang-key="add_row_to_table">Add Row to Table</span></button>
+
+            <div class="printable-area">
+                <div class="info-card glass-card">
+                    <div class="logo-container">
+                        <input type="file" accept="image/*" onchange="loadClientLogo('inspection')" style="display:none;" id="client-logo-inspection-input">
+                        <img id="client-logo-inspection" src="https://i.imgur.com/W1f3q2y.png" alt="Client Logo" onclick="document.getElementById('client-logo-inspection-input').click();">
+                    </div>
+                    <div class="title-container">
+                        <div id="inspection-title-1" class="report-title-row" contenteditable="true" oninput="saveActiveReport()">Maintenance of Strategic</div>
+                        <div id="inspection-title-2" class="report-title-row" contenteditable="true" oninput="saveActiveReport()">Highways Qatar North</div>
+                        <div id="inspection-title-3" class="report-title-row" contenteditable="true" oninput="saveActiveReport()">ZF_093</div>
+                        <label class="report-date-label">
+                            <input type="date" id="display-date" onchange="saveActiveReport()">
+                        </label>
+                        <div id="inspection-small-title" class="small-title" contenteditable="true" oninput="saveActiveReport()">Inspection Report</div>
+                    </div>
+                    <div class="logo-container">
+                        <input type="file" accept="image/*" onchange="loadCompanyLogo('inspection')" style="display:none;" id="company-logo-inspection-input">
+                        <img id="company-logo-inspection" src="https://i.imgur.com/1s3a1H4.png" alt="Company Logo" onclick="document.getElementById('company-logo-inspection-input').click();">
+                    </div>
+                    
+                    <div class="print-header-replacement">
+                        <img id="client-logo-print-src" src="" alt="Client Logo" class="print-logo">
+                        <div class="print-title-container" id="inspection-print-title"></div>
+                        <img id="company-logo-print-src" src="" alt="Company Logo" class="print-logo">
+                        <div class="print-date-footer"><span id="inspection-print-date"></span></div>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                     <div class="table-controls">
+                        <h3 class="table-controls-title">Inspection Report</h3>
+                        <div class="menu-button" tabindex="0">
+                            <span>⋮</span>
+                            <div class="dropdown-menu" id="inspection-table-menu"></div>
+                        </div>
+                    </div>
+                    <div class="table-container" style="max-height: 50vh; overflow-y: auto;">
+                        <table id="report-table"></table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="cost-estimation-tab" class="tab-content">
+            <div class="card glass-card boq-entry-card">
+                <h3>BOQ Item Entry</h3>
+                <div class="form-grid-est">
+                    <div class="form-group-est">
+                        <label for="boq-ref-select">BOQ Ref.</label>
+                        <div class="boq-ref-group">
+                            <input type="search" id="boq-search" placeholder="Search Ref...">
+                            <select id="boq-ref-select"></select>
+                        </div>
+                    </div>
+                    <div class="form-group-est description-group">
+                        <label for="boq-desc">Description</label>
+                        <input type="text" id="boq-desc" readonly>
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-unit">Unit</label>
+                        <input type="text" id="boq-unit" readonly>
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-nr">NR</label>
+                        <input type="number" id="boq-nr" placeholder="e.g., 1">
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-length">Length (m)</label>
+                        <input type="number" id="boq-length" placeholder="e.g., 4.00">
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-width">Width (m)</label>
+                        <input type="number" id="boq-width" placeholder="e.g., 2.00">
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-height">Height (m)</label>
+                        <input type="number" id="boq-height" placeholder="e.g., 0.07">
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-total-qty">Total Qty.</label>
+                        <input type="text" id="boq-total-qty" readonly>
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-rate">Rate</label>
+                        <input type="text" id="boq-rate" readonly>
+                    </div>
+                    <div class="form-group-est">
+                        <label for="boq-amount">Amount (QR)</label>
+                        <input type="text" id="boq-amount" readonly>
+                    </div>
+                    <div class="form-group-est description-group">
+                        <label for="boq-remarks">Remarks</label>
+                        <input type="text" id="boq-remarks">
+                    </div>
+                </div>
+                <div id="most-used-boq-container">
+                    <h4>Most Used BOQ Ref</h4>
+                    <ul id="most-used-boq-list"></ul>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px;">
+                    <button onclick="downloadBOQTemplate()" class="btn-neutral">Download BOQ Template</button>
+                    <button onclick="document.getElementById('boq-csv-input').click()" class="btn-action">Import BOQ from CSV</button>
+                    <input type="file" id="boq-csv-input" style="display:none;" accept=".csv">
+                    <button id="insert-boq-row-btn" class="btn-insert" onclick="insertBOQRow()">Insert Row</button>
+                </div>
+            </div>
+          
+            <div class="printable-area">
+                <div class="info-card glass-card">
+                    <div class="logo-container">
+                        <input type="file" accept="image/*" onchange="loadClientLogo('estimation')" style="display:none;" id="client-logo-estimation-input">
+                        <img id="client-logo-estimation" src="https://i.imgur.com/W1f3q2y.png" alt="Client Logo" title="Click to upload Client Logo" onclick="document.getElementById('client-logo-estimation-input').click()">
+                    </div>
+                    <div class="title-container">
+                        <div id="estimation-title-1" class="report-title-row" contenteditable="true" oninput="saveActiveReport()">Maintenance of Strategic</div>
+                        <div id="estimation-title-2" class="report-title-row" contenteditable="true" oninput="saveActiveReport()">Highways Qatar North</div>
+                        <div id="estimation-title-3" class="report-title-row" contenteditable="true" oninput="saveActiveReport()">ZF_093</div>
+                        <label class="report-date-label">
+                            <input type="date" id="estimation-date" oninput="saveActiveReport()">
+                        </label>
+                        <div id="estimation-small-title" class="small-title" contenteditable="true" oninput="saveActiveReport()">Cost Estimation</div>
+                    </div>
+                    <div class="logo-container">
+                        <input type="file" accept="image/*" onchange="loadCompanyLogo('estimation')" style="display:none;" id="company-logo-estimation-input">
+                        <img id="company-logo-estimation" src="https://i.imgur.com/1s3a1H4.png" alt="Company Logo" title="Click to upload Company Logo" onclick="document.getElementById('company-logo-estimation-input').click()">
+                    </div>
+                    <div class="print-header-replacement">
+                        <img id="est-client-logo-print-src" src="" alt="Client Logo" class="print-logo">
+                        <div class="print-title-container" id="estimation-print-title"></div>
+                        <img id="est-company-logo-print-src" src="" alt="Company Logo" class="print-logo">
+                        <div class="print-date-footer"><span id="estimation-print-date"></span></div>
+                    </div>
+                </div>
+                <div class="glass-card estimation-details">
+                    <div class="form-row"><label for="work-order-no">Work Order No.</label><input type="text" id="work-order-no" oninput="saveActiveReport()"></div>
+                    <div class="form-row"><label for="tpc-no">TPC No.</label><input type="text" id="tpc-no" oninput="saveActiveReport()"></div>
+                    <div class="form-row"><label for="work-desc">Description of Work</label><input type="text" id="work-desc" oninput="saveActiveReport()"></div>
+                </div>
+                
+                <div class="glass-card">
+                    <div class="table-controls">
+                        <h3 class="table-controls-title">Cost Estimation</h3>
+                        <div class="menu-button" tabindex="0">
+                            <span>⋮</span>
+                            <div class="dropdown-menu" id="estimation-table-menu"></div>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="cost-estimation-table">
+                            <thead>
+                                <tr>
+                                    <th>BOQ Ref.</th>
+                                    <th>Description</th>
+                                    <th>Unit</th>
+                                    <th>NR</th>
+                                    <th>Length (m)</th>
+                                    <th>Width (m)</th>
+                                    <th>Height (m)</th>
+                                    <th>Total Qty.</th>
+                                    <th>Rate</th>
+                                    <th>Amount</th>
+                                    <th>Remarks</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                            <tfoot>
+                                <tr>
+                                    <td colspan="9" style="text-align: right; font-weight: bold; border: 1px solid black;">TOTAL Amount</td>
+                                    <td id="total-amount-cell" style="font-weight: bold; border: 1px solid black;">QAR 0.00</td>
+                                    <td colspan="2" style="border: 1px solid black;"></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="vehicle-tracking-tab" class="tab-content">
+            <div class="glass-card integrated-map-container">
+                <h3 data-lang-key="tab_vehicle_tracking">Vehicle Tracking</h3>
+                <div id="vehicle-map-controls">
+                    <button class="btn-action" onclick="centerVehicleMapOnUser()">My Location</button>
+                    <button class="btn-action" onclick="fitMapToAssetMarkers()">Fit All Assets</button>
+                    <button class="btn-action" onclick="fitMapToAllMarkers()">Fit to All</button>
+                    <hr style="flex-grow: 1; border-color: transparent;">
+                    <button class="btn-neutral" onclick="downloadCSVTemplate()">Download CSV Template</button>
+                    <button class="btn-action" onclick="document.getElementById('vehicle-csv-input').click()">Import KML/CSV</button>
+                    <input type="file" id="vehicle-csv-input" style="display:none;" accept=".csv,.kml">
+                    <button id="print-map-btn" class="btn-action">Print Map</button>
+                    <button class="btn-delete" onclick="clearMapMarkers()">Clear Map</button>
+                </div>
+                <div id="vehicle-map"></div>
+                <div id="import-summary" style="margin-top: 10px; font-weight: bold;"></div>
+            </div>
+        </div>
+        
+        <div id="saved-projects" class="tab-content">
+            <div class="glass-card">
+                <h3 data-lang-key="tab_saved_projects">Saved Projects</h3>
+                <input type="text" id="project-search" placeholder="Search projects by name..." onkeyup="filterProjects()" style="margin-bottom: 10px;">
+                <div style="margin-bottom: 10px;">
+                    <label for="sort-projects">Sort by:</label>
+                    <select id="sort-projects" onchange="sortProjects()">
+                        <option value="name">Name</option>
+                        <option value="date-newest">Date Saved (Newest)</option>
+                        <option value="date-oldest">Date Saved (Oldest)</option>
+                    </select>
+                </div>
+                <ul id="projects-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <footer class="glass-card footer">
+        <p style="margin: 0;">All rights reserved © <span id="current-year"></span></p>
+        <p style="margin: 0;" data-lang-key="created_by">Created by [Your Name/Company]</p>
+    </footer>
+
+    <div class="fab-container">
+        <button id="camera-fab" class="fab" onclick="openCamera()">📷</button>
+        <button id="add-fab" class="fab" onclick="document.querySelector('#asset').focus()">➕</button>
+    </div>
+
+    <div id="quantityModal" class="modal"><div class="modal-content glass-card"><h3 data-lang-key="enter_quantity_details">Enter Quantity Details</h3><input type="number" id="length" placeholder="Length (m)"><input type="number" id="width" placeholder="Width (m)"><input type="number" id="depth" placeholder="Depth (m)"><input type="number" id="repetitions" placeholder="Repetitions (NR)"><div class="modal-buttons" style="display:flex; gap: 10px;"><button onclick="setQuantity()" class="btn-insert" data-lang-key="set_quantity" style="flex: 1;">Set Quantity</button><button onclick="closeQuantityModal()" class="btn-delete" style="flex: 1;" data-lang-key="cancel">Cancel</button></div></div></div>
+    <div id="camera-modal" class="modal"><div id="camera-modal-content" class="glass-card"><video id="camera-feed" autoplay playsinline></video><button id="capture-btn" onclick="capturePhoto()">📸</button><button id="close-camera-btn" onclick="closeCamera()">X</button></div></div>
+    <div id="preview-overlay"><div id="preview-content"><button id="close-preview" onclick="hidePreview()" class="btn-delete" style="position: absolute; top: 10px; right: 10px; font-size: 24px; padding: 5px 10px; line-height: 1;">❌</button></div></div>
+    <div id="confirm-delete-modal" class="modal"><div class="modal-content glass-card"><h3>Confirm Deletion</h3><p>To confirm deletion, please type the project name: "<span id="project-to-delete-name"></span>"</p><input type="text" id="delete-confirmation-input" placeholder="Type project name here"><div style="display:flex; gap: 10px;"><button onclick="confirmProjectDeletion()" class="btn-delete" style="flex: 1;">Confirm Delete</button><button onclick="cancelProjectDeletion()" class="btn-neutral" style="flex: 1;">Cancel</button></div></div></div>
+    
+    <canvas id="photo-canvas" style="display:none;"></canvas>
+
+    <script src="script.js"></script>
+</body>
+</html>
